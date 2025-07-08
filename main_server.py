@@ -152,7 +152,9 @@ def get_current_user():
         return jsonify(user)
     except:
         return jsonify({'status': 'error', 'message': 'Invalid ID'}), 400
+# ... (keep all your previous imports and setup code the same)
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
-    socketio.run(app, host='0.0.0.0', port=port)
+    # Development mode (for local testing)
+    socketio.run(app, host='0.0.0.0', port=port, debug=True, allow_unsafe_werkzeug=True)
