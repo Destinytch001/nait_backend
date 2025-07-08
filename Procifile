@@ -1,1 +1,1 @@
-web: gunicorn -w 1 -b :$PORT app:app  # No -k parameter needed
+web: gunicorn -k gevent -w 1 -b :$PORT app:app
