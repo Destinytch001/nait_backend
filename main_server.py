@@ -807,6 +807,6 @@ def serve_page(page):
     if os.path.isfile(html_path):
         return send_from_directory(BASE_DIR, f"{page}.html")
     return send_from_directory(BASE_DIR, '404.html'), 404
-
 if __name__ == '__main__':
-    app.run(port=5000, debug=True)
+    port = int(os.environ.get("PORT", 5000))  # Use Render's PORT or default to 5000
+    app.run(host='0.0.0.0', port=port)  # Listen on all network interfaces
