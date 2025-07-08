@@ -154,6 +154,15 @@ def get_current_user():
 # ... (keep all your previous imports and setup code the same)
 
 if __name__ == '__main__':
+    # This block will ONLY run during local development
+    # On Render, Gunicorn will serve the app (via Procfile)
     port = int(os.environ.get("PORT", 5000))
-    # Development mode (for local testing)
-    socketio.run(app, host='0.0.0.0', port=port, debug=True, allow_unsafe_werkzeug=True)
+    if os.environ.get('RENDER'):
+        print("Running in production - using Gunicorn as specified in Procfile")
+    else:
+        # Local development
+        socketio.run(app,
+                   host='0.0.0.0',
+                   port=port,
+                   debug=True,
+                   allow_unsafe_werkzeug=True)
