@@ -26,9 +26,9 @@ CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 socketio = SocketIO(app, 
                    cors_allowed_origins="*",
-                   async_mode='gevent',  
-                   engineio_logger=False,
-                   logger=False)
+                   async_mode='gevent',  # Explicitly use gevent
+                   logger=True,
+                   engineio_logger=True)  # Temporarily enable for debugging
 
 # File upload configuration
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
