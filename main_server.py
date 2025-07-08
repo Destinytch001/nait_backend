@@ -11,37 +11,52 @@ import cloudinary.uploader
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from dotenv import load_dotenv
-from flask import session
 from functools import wraps
+from flask_socketio import SocketIO, emit
+
+# Load environment variables
 load_dotenv()
 
-API_BASE_URL = 'https://nait-backend.onrender.com/api'
+# Initialize Flask app
 app = Flask(__name__)
-app.secret_key = os.getenv('SECRET_KEY')
-global_origin = "*"
-CORS(app, resources={r"/api/*": {"origins": global_origin}})
+app.secret_key = os.getenv('SECRET_KEY', 'your-secret-key-here')
 
+# Configure CORS
+CORS(app, resources={r"/api/*": {"origins": "*"}})
+
+# Initialize SocketIO with production settings
+socketio = SocketIO(app, 
+                   cors_allowed_origins="*",
+                   async_mode='eventlet',
+                   engineio_logger=False,
+                   logger=False)
+
+# File upload configuration
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ALLOWED_EXT = {'png', 'jpg', 'jpeg', 'gif', 'pdf', 'mp4', 'docx'}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXT
 
+# Cloudinary configuration
 cloudinary.config(
     cloud_name=os.getenv('CLOUDINARY_CLOUD_NAME'),
     api_key=os.getenv('CLOUDINARY_API_KEY'),
     api_secret=os.getenv('CLOUDINARY_API_SECRET')
 )
 
+# MongoDB setup
 client = MongoClient(os.getenv('MONGO_URI'))
 db = client['naits_db']
 users = db.users
 logins = db.user_logins
+sessions = db.sessions  # For tracking active sessions
 announcements = db.announcements
 ads = db.ads
 resources = db.resources
 messages = db.messages
 
+# Security headers
 @app.after_request
 def add_no_cache_headers(response):
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
@@ -49,6 +64,7 @@ def add_no_cache_headers(response):
     response.headers['Expires'] = '0'
     return response
 
+# Authentication helpers
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -60,12 +76,34 @@ def login_required(f):
 def get_current_user_id():
     return session.get('user_id')
 
+# SocketIO event handlers
+@socketio.on('connect')
+def handle_connect():
+    if 'user_id' in session:
+        try:
+            sessions.update_one(
+                {'user_id': ObjectId(session['user_id'])},
+                {'$set': {
+                    'socket_id': request.sid,
+                    'connected': True,
+                    'last_active': datetime.now()
+                }},
+                upsert=True
+            )
+        except Exception as e:
+            print(f"Socket connection error: {str(e)}")
 
+@socketio.on('disconnect')
+def handle_disconnect():
+    if 'user_id' in session:
+        try:
+            sessions.delete_one({'socket_id': request.sid})
+        except Exception as e:
+            print(f"Socket disconnection error: {str(e)}")
 
-
+# API Routes
 @app.route('/register', methods=['POST'])
 @cross_origin()
-
 def register():
     data = request.get_json() or {}
     required = ['firstName', 'lastName', 'whatsapp', 'nickname', 'level', 'department', 'password']
@@ -94,7 +132,7 @@ def register():
 
 @app.route('/users', methods=['GET'])
 @cross_origin()
-
+@login_required
 def get_users():
     user_list = []
     for user in users.find({}, {'password': 0}):
@@ -107,7 +145,7 @@ def get_users():
 
 @app.route('/update_user', methods=['PUT'])
 @cross_origin()
-
+@login_required
 def update_user():
     data = request.get_json() or {}
     orig = data.get('nickname')
@@ -140,22 +178,6 @@ def update_user():
     users.update_one({'_id': user['_id']}, {'$set': update_data})
     return jsonify({'status': 'success', 'message': 'User updated'})
 
-from flask import session
-from functools import wraps
-
-# Add these helper functions
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user_id' not in session:
-            return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
-        return f(*args, **kwargs)
-    return decorated_function
-
-def get_current_user_id():
-    return session.get('user_id')
-
-# Modified login endpoint to set session
 @app.route('/login', methods=['POST'])
 @cross_origin()
 def login():
@@ -170,7 +192,16 @@ def login():
             'login_time': now
         })
         
-        # Set session
+        # Store session in database
+        sessions.insert_one({
+            'user_id': user['_id'],
+            'session_id': session.sid,
+            'socket_id': request.sid,
+            'created_at': now,
+            'connected': True
+        })
+        
+        # Set Flask session
         session['user_id'] = str(user['_id'])
         
         return jsonify({
@@ -183,7 +214,6 @@ def login():
         })
     return jsonify({'status': 'error', 'message': 'Invalid credentials'}), 401
 
-# Modified logout endpoint to clear session
 @app.route('/logout', methods=['POST'])
 @cross_origin()
 @login_required
@@ -197,12 +227,14 @@ def logout():
     now = datetime.now()
     users.update_one({'_id': user_oid}, {'$set': {'last_logout': now}})
     
+    # Remove session tracking
+    sessions.delete_one({'session_id': session.sid})
+    
     # Clear session
     session.pop('user_id', None)
     
     return jsonify({'status': 'success', 'message': 'Logged out'})
 
-# New endpoint to get current user
 @app.route('/api/current-user', methods=['GET'])
 @cross_origin()
 @login_required
@@ -224,11 +256,9 @@ def get_current_user():
     
     return jsonify(user)
 
-# Update your Flask app configuration
-app.secret_key = 'your-secret-key-here'  # Change this to a secure random key in production
 @app.route('/delete_account', methods=['POST'])
 @cross_origin()
-
+@login_required
 def delete_account():
     data = request.get_json() or {}
     nick = data.get('nickname')
@@ -239,9 +269,27 @@ def delete_account():
     if not user:
         return jsonify({'status': 'error', 'message': 'User not found'}), 404
 
-    logins.delete_many({'user_id': user['_id']})
-    users.delete_one({'_id': user['_id']})
-    return jsonify({'status': 'success', 'message': 'Deleted'})
+    try:
+        # Get all active sessions for this user
+        active_sessions = list(sessions.find({'user_id': user['_id'], 'connected': True}))
+        
+        # Delete user data
+        users.delete_one({'_id': user['_id']})
+        logins.delete_many({'user_id': user['_id']})
+        sessions.delete_many({'user_id': user['_id']})
+        
+        # Notify all active sessions via WebSocket
+        for sess in active_sessions:
+            if sess.get('socket_id'):
+                socketio.emit('account_deleted', {
+                    'user_id': str(user['_id']),
+                    'message': 'Your account has been deleted by admin'
+                }, room=sess['socket_id'])
+        
+        return jsonify({'status': 'success', 'message': 'User deleted successfully'})
+        
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/dashboard_stats', methods=['GET'])
 @cross_origin()
@@ -836,7 +884,6 @@ def serve_page(page):
     if os.path.isfile(html_path):
         return send_from_directory(BASE_DIR, f"{page}.html")
     return send_from_directory(BASE_DIR, '404.html'), 404
-
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))  # Use Render's PORT or default to 5000
-    app.run(host='0.0.0.0', port=port)  # Listen on all network interfaces
+    port = int(os.environ.get("PORT", 5000))
+    socketio.run(app, host='0.0.0.0', port=port)
