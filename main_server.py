@@ -18,11 +18,12 @@ app.secret_key = os.getenv('SECRET_KEY', 'your-secret-key-here')
 
 # Configure CORS
 CORS(app, resources={r"/api/*": {"origins": "*"}})
-socketio = SocketIO(app, 
+# Initialize SocketIO with gevent (production-ready)
+socketio = SocketIO(app,
                    cors_allowed_origins="*",
-                   async_mode='gevent',
-                   logger=False,
-                   engineio_logger=False)
+                   async_mode='gevent',  # Use gevent for production
+                   logger=True,  # Enable for debugging, disable in production
+                   engineio_logger=True)  # Enable for debugging, disable in production
 
 # MongoDB setup
 client = MongoClient(os.getenv('MONGO_URI'))
