@@ -18,11 +18,9 @@ app.secret_key = os.getenv('SECRET_KEY', 'your-secret-key-here')
 
 # Configure CORS
 CORS(app, resources={r"/api/*": {"origins": "*"}})
-
-# Initialize SocketIO with threading (most compatible)
 socketio = SocketIO(app, 
                    cors_allowed_origins="*",
-                   async_mode='threading',
+                   async_mode='gevent',
                    logger=False,
                    engineio_logger=False)
 
