@@ -1,1 +1,1 @@
-web: gunicorn -k eventlet -w 4 -b :$PORT --timeout 120 --worker-connections 1000 --log-level=warning app:app
+web: gunicorn -k gevent -w 1 -b :$PORT app:app
