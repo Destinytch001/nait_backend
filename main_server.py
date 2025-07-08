@@ -1,4 +1,3 @@
-
 import bcrypt
 import os
 from dateutil.relativedelta import relativedelta
@@ -12,9 +11,11 @@ import cloudinary.uploader
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from dotenv import load_dotenv
+from flask import session
+from functools import wraps
 load_dotenv()
 
-API_BASE_URL = 'http://localhost:5000/api'
+API_BASE_URL = 'https://nait-backend.onrender.com/api'
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY')
 global_origin = "*"
@@ -48,33 +49,16 @@ def add_no_cache_headers(response):
     response.headers['Expires'] = '0'
     return response
 
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
+        return f(*args, **kwargs)
+    return decorated_function
 
-@app.route('/api/current-user', methods=['GET'])
-@cross_origin()
-def get_current_user():
-    # This assumes you're using session-based authentication
-    # You'll need to implement your own session checking logic
-    # Here's a basic example:
-    
-    # Check if user is logged in (you'll need to implement this based on your auth system)
-    if 'user_id' not in session:
-        return jsonify({'status': 'error', 'message': 'Not logged in'}), 401
-    
-    try:
-        user = users.find_one({'_id': ObjectId(session['user_id'])})
-        if not user:
-            return jsonify({'status': 'error', 'message': 'User not found'}), 404
-        
-        return jsonify({
-            'status': 'success',
-            'nickname': user['nickname'],
-            'first_name': user['first_name'],
-            'last_name': user['last_name']
-        })
-    except:
-        return jsonify({'status': 'error', 'message': 'Invalid session'}), 401
-
-
+def get_current_user_id():
+    return session.get('user_id')
 
 
 
@@ -156,9 +140,24 @@ def update_user():
     users.update_one({'_id': user['_id']}, {'$set': update_data})
     return jsonify({'status': 'success', 'message': 'User updated'})
 
+from flask import session
+from functools import wraps
+
+# Add these helper functions
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
+        return f(*args, **kwargs)
+    return decorated_function
+
+def get_current_user_id():
+    return session.get('user_id')
+
+# Modified login endpoint to set session
 @app.route('/login', methods=['POST'])
 @cross_origin()
-
 def login():
     data = request.get_json() or {}
     user = users.find_one({'nickname': data.get('nickname')})
@@ -170,6 +169,10 @@ def login():
             'user_id': user['_id'],
             'login_time': now
         })
+        
+        # Set session
+        session['user_id'] = str(user['_id'])
+        
         return jsonify({
             'status': 'success',
             'user': {
@@ -180,23 +183,49 @@ def login():
         })
     return jsonify({'status': 'error', 'message': 'Invalid credentials'}), 401
 
+# Modified logout endpoint to clear session
 @app.route('/logout', methods=['POST'])
 @cross_origin()
-
+@login_required
 def logout():
-    data = request.get_json() or {}
-    if not data.get('user_id'):
-        return jsonify({'status': 'error', 'message': 'user_id required'}), 400
-
+    user_id = get_current_user_id()
     try:
-        user_id = ObjectId(data['user_id'])
+        user_oid = ObjectId(user_id)
     except:
         return jsonify({'status': 'error', 'message': 'Invalid user ID'}), 400
 
     now = datetime.now()
-    users.update_one({'_id': user_id}, {'$set': {'last_logout': now}})
+    users.update_one({'_id': user_oid}, {'$set': {'last_logout': now}})
+    
+    # Clear session
+    session.pop('user_id', None)
+    
     return jsonify({'status': 'success', 'message': 'Logged out'})
 
+# New endpoint to get current user
+@app.route('/api/current-user', methods=['GET'])
+@cross_origin()
+@login_required
+def get_current_user():
+    user_id = get_current_user_id()
+    try:
+        user_oid = ObjectId(user_id)
+    except:
+        return jsonify({'status': 'error', 'message': 'Invalid user ID'}), 400
+
+    user = users.find_one({'_id': user_oid}, {'password': 0})
+    if not user:
+        return jsonify({'status': 'error', 'message': 'User not found'}), 404
+    
+    user['id'] = str(user['_id'])
+    user['created_at'] = user['created_at'].strftime('%Y-%m-%d %H:%M:%S')
+    user['last_login'] = user['last_login'].strftime('%Y-%m-%d %H:%M:%S') if user.get('last_login') else ''
+    del user['_id']
+    
+    return jsonify(user)
+
+# Update your Flask app configuration
+app.secret_key = 'your-secret-key-here'  # Change this to a secure random key in production
 @app.route('/delete_account', methods=['POST'])
 @cross_origin()
 
@@ -807,6 +836,7 @@ def serve_page(page):
     if os.path.isfile(html_path):
         return send_from_directory(BASE_DIR, f"{page}.html")
     return send_from_directory(BASE_DIR, '404.html'), 404
+
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))  # Use Render's PORT or default to 5000
     app.run(host='0.0.0.0', port=port)  # Listen on all network interfaces
