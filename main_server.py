@@ -64,7 +64,6 @@ except Exception as e:
 try:
     client = MongoClient(
         os.environ.get('MONGODB_URI'),
-        socketTimeoutMS=30000,
         retryWrites=True,
         appName="naits_app"
     )
