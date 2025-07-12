@@ -1,1 +1,1 @@
-web: gunicorn -k gevent -w 4 -b :$PORT app:app
+web: gunicorn naits:app
