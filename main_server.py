@@ -63,7 +63,7 @@ except Exception as e:
 # MongoDB connection
 try:
     client = MongoClient(
-        os.environ.get('MONGODB_URI'),
+        client = MongoClient(os.environ.get('MONGODB_URI'),
         retryWrites=True,
         appName="naits_app"
     )
