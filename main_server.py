@@ -62,11 +62,11 @@ except Exception as e:
     print(f"❌ Cloudinary connection failed: {e}")
 # MongoDB connection
 try:
-    client = MongoClient(
-        client = MongoClient(os.environ.get('MONGODB_URI'),
-        retryWrites=True,
-        appName="naits_app"
-    )
+   client = MongoClient(
+    os.environ.get('MONGODB_URI'),
+    retryWrites=True,
+    appName="naits_app"
+)
     db = client.get_database('naits_db')
     users_collection = db.users
     announcements_collection = db.announcements
