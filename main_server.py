@@ -38,6 +38,8 @@ app.register_blueprint(resources_bp)
 
 # Enable CORS
 origins = os.environ.get("ALLOWED_ORIGINS").split(",")
+
+origins = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
 CORS(app,
      resources={r"/*": {"origins": origins}},
      supports_credentials=True,
