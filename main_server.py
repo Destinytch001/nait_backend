@@ -43,27 +43,24 @@ CORS(app,
      expose_headers="*",
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 
-@app.before_request
-def handle_options_and_https():
-    # Redirect to HTTPS if needed
-    if request.headers.get("X-Forwarded-Proto", "http") == "http":
-        return redirect(request.url.replace("http://", "https://", 1), code=301)
+@app.after_request
+def add_cors_and_security_headers(response):
+    origin = request.headers.get('Origin')
+    allowed_origins = ["https://destinytch.com.ng", "https://www.destinytch.com.ng"]
+
+    if origin in allowed_origins:
+        response.headers.add("Access-Control-Allow-Origin", origin)
+        response.headers.add("Access-Control-Allow-Credentials", "true")
+        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        response.headers.add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+
+    # Security headers
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    response.headers['Content-Security-Policy'] = "default-src 'self'"
     
-    # Handle preflight OPTIONS
-    if request.method == 'OPTIONS':
-        return _build_cors_preflight_response()
-
-
-def _build_cors_preflight_response():
-    response = jsonify({'status': 'preflight'})
-    origin = request.headers.get('Origin', '*')
-    response.headers.add("Access-Control-Allow-Origin", origin)
-    response.headers.add("Access-Control-Allow-Headers", request.headers.get(
-        'Access-Control-Request-Headers', 'Content-Type, Authorization'))
-    response.headers.add("Access-Control-Allow-Methods", request.headers.get(
-        'Access-Control-Request-Method', 'GET, POST, PUT, DELETE, OPTIONS'))
-    response.headers.add("Access-Control-Allow-Credentials", 'true')
-    response.headers.add("Access-Control-Max-Age", "86400")
     return response
 
 @app.after_request
