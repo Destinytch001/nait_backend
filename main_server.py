@@ -44,9 +44,15 @@ CORS(app,
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 
 @app.before_request
-def handle_options():
+def handle_options_and_https():
+    # Redirect to HTTPS if needed
+    if request.headers.get("X-Forwarded-Proto", "http") == "http":
+        return redirect(request.url.replace("http://", "https://", 1), code=301)
+    
+    # Handle preflight OPTIONS
     if request.method == 'OPTIONS':
         return _build_cors_preflight_response()
+
 
 def _build_cors_preflight_response():
     response = jsonify({'status': 'preflight'})
