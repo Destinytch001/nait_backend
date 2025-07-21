@@ -46,9 +46,7 @@ CORS(app,
 @app.after_request
 def add_cors_and_security_headers(response):
     origin = request.headers.get('Origin')
-    allowed_origins = ["https://destinytch.com.ng", "https://www.destinytch.com.ng"]
-
-    if origin in allowed_origins:
+    if origin:
         response.headers.add("Access-Control-Allow-Origin", origin)
         response.headers.add("Access-Control-Allow-Credentials", "true")
         response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
@@ -60,17 +58,9 @@ def add_cors_and_security_headers(response):
     response.headers['X-XSS-Protection'] = '1; mode=block'
     response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     response.headers['Content-Security-Policy'] = "default-src 'self'"
-    
+
     return response
 
-@app.after_request
-def add_security_headers(response):
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
-    response.headers['X-XSS-Protection'] = '1; mode=block'
-    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
-    response.headers['Content-Security-Policy'] = "default-src 'self'"
-    return response
 
 # JWT Config
 JWT_SECRET = os.environ.get('JWT_SECRET')
