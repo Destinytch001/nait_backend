@@ -37,7 +37,7 @@ from resources import resources_bp
 app.register_blueprint(resources_bp)
 
 CORS(app,
-     resources={r"/*": {"origins": "*"}},
+     resources={r"/*": {"origins": ["https://destinytch.com.ng"]}},
      supports_credentials=True,
      allow_headers="*",
      expose_headers="*",
