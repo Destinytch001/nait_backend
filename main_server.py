@@ -36,15 +36,30 @@ app.register_blueprint(notifications_bp)
 from resources import resources_bp  
 app.register_blueprint(resources_bp)
 
-# Enable CORS
-origins = os.environ.get("ALLOWED_ORIGINS").split(",")
 CORS(app,
-     resources={r"/*": {"origins": origins}},
+     resources={r"/*": {"origins": ["https://destinytch.com.ng"]}},
      supports_credentials=True,
      allow_headers="*",
      expose_headers="*",
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 
+@app.after_request
+def add_cors_and_security_headers(response):
+    origin = request.headers.get('Origin')
+    if origin:
+        response.headers.add("Access-Control-Allow-Origin", origin)
+        response.headers.add("Access-Control-Allow-Credentials", "true")
+        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        response.headers.add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+
+    # Security headers
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    response.headers['Content-Security-Policy'] = "default-src 'self'"
+
+    return response
 
 
 # JWT Config
@@ -409,12 +424,12 @@ def update_user_profile():
 
 @app.route('/')
 def home():
-    return jsonify({"status": "NAITS Backend Running you de find", "time_in_nigeria": get_wat_time().isoformat()})
+    return jsonify({"status": "NAITS Backend Running", "time_in_nigeria": get_wat_time().isoformat()})
 
 @app.route('/api/auth/signup', methods=['POST'])
 def signup():
     if request.method == 'OPTIONS':
-        return _build_cors_preflight_response() # type: ignore
+        return _build_cors_preflight_response()
     
     try:
         data = request.get_json()
@@ -445,7 +460,7 @@ def signup():
 @app.route('/api/auth/signin', methods=['POST'])
 def signin():
     if request.method == 'OPTIONS':
-        return _build_cors_preflight_response() # type: ignore
+        return _build_cors_preflight_response()
     
     try:
         data = request.get_json()
@@ -585,8 +600,8 @@ def get_user_status(user_id):
 @app.route('/api/admin/auth/signin', methods=['POST', 'OPTIONS'])
 def admin_signin():
     if request.method == 'OPTIONS':
-        return jsonify({'status': 'preflight'}), 200
-
+        return _build_cors_preflight_response()
+    
     try:
         data = request.get_json()
         if not data:
@@ -594,7 +609,7 @@ def admin_signin():
 
         if not all(k in data for k in ['email', 'password']):
             return jsonify({'success': False, 'error': 'Missing email or password'}), 400
-
+        
         email = data['email'].strip().lower()
         password = data['password']
 
@@ -620,125 +635,35 @@ def admin_signin():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-    
-    
-@app.route('/api/admin/users', methods=['GET', 'POST', 'PUT', 'DELETE'])
-@requires_admin
-def admin_users():
+@app.route('/api/users/change-password', methods=['POST'])
+@requires_auth
+def change_password():
     try:
-        if request.method == 'GET':
-            # Get all users with pagination and filtering
-            page = int(request.args.get('page', 1))
-            per_page = int(request.args.get('per_page', 10))
-            department = request.args.get('department')
-            level = request.args.get('level')
-            status = request.args.get('status')
-            search = request.args.get('search')
-
-            query = {}
+        data = request.get_json()
+        user_id = request.user_id
+        
+        if not data or not all(k in data for k in ['current_password', 'new_password']):
+            return jsonify({'success': False, 'error': 'Missing required fields'}), 400
             
-            if department:
-                query['department'] = department.upper()
-            if level:
-                query['level'] = level.upper()
-            if status:
-                query['status'] = status.lower()
-            if search:
-                query['$or'] = [
-                    {'first_name': {'$regex': search, '$options': 'i'}},
-                    {'last_name': {'$regex': search, '$options': 'i'}},
-                    {'nickname': {'$regex': search, '$options': 'i'}},
-                    {'email': {'$regex': search, '$options': 'i'}},
-                    {'whatsapp': {'$regex': search, '$options': 'i'}}
-                ]
-
-            total = users_collection.count_documents(query)
-            users = list(users_collection.find(query)
-                        .skip((page - 1) * per_page)
-                        .limit(per_page)
-                        .sort('created_at', -1))
-
-            return jsonify({
-                'success': True,
-                'users': [sanitize_user_data(u) for u in users],
-                'total': total,
-                'page': page,
-                'per_page': per_page
-            })
-
-        elif request.method == 'POST':
-            # Create new user
-            data = request.get_json()
-            errors = validate_signup_data(data)
+        user = users_collection.find_one({'_id': ObjectId(user_id)})
+        if not user:
+            return jsonify({'success': False, 'error': 'User not found'}), 404
             
-            if errors:
-                return jsonify({'success': False, 'error': 'Validation failed', 'details': errors}), 400
-
-            if user_exists(data['nickname'], data['whatsapp']):
-                return jsonify({'success': False, 'error': 'User already exists'}), 400
-
-            user_id = create_user(data)
-            user = users_collection.find_one({'_id': user_id})
+        # Verify current password
+        if not check_password_hash(user['password'], data['current_password']):
+            return jsonify({'success': False, 'error': 'Current password is incorrect'}), 401
             
-            return jsonify({
-                'success': True,
-                'user': sanitize_user_data(user),
-                'message': 'User created successfully'
-            }), 201
-
-        elif request.method == 'PUT':
-            # Update user
-            data = request.get_json()
-            if not data.get('id'):
-                return jsonify({'success': False, 'error': 'User ID required'}), 400
-
-            user_id = data['id']
-            update_data = {
-                'first_name': data.get('first_name'),
-                'last_name': data.get('last_name'),
-                'nickname': data.get('nickname'),
-                'department': data.get('department'),
-                'level': data.get('level'),
-                'email': data.get('email'),
-                'whatsapp': data.get('whatsapp'),
-                'status': data.get('status'),
+        # Update password
+        users_collection.update_one(
+            {'_id': ObjectId(user_id)},
+            {'$set': {
+                'password': generate_password_hash(data['new_password']),
                 'updated_at': get_wat_time()
-            }
-
-            # Remove None values
-            update_data = {k: v for k, v in update_data.items() if v is not None}
-
-            result = users_collection.update_one(
-                {'_id': ObjectId(user_id)},
-                {'$set': update_data}
-            )
-
-            if result.modified_count == 0:
-                return jsonify({'success': False, 'error': 'No changes made'}), 400
-
-            user = users_collection.find_one({'_id': ObjectId(user_id)})
-            return jsonify({
-                'success': True,
-                'user': sanitize_user_data(user),
-                'message': 'User updated successfully'
-            })
-
-        elif request.method == 'DELETE':
-            # Delete user
-            user_id = request.args.get('id')
-            if not user_id:
-                return jsonify({'success': False, 'error': 'User ID required'}), 400
-
-            result = users_collection.delete_one({'_id': ObjectId(user_id)})
-            
-            if result.deleted_count == 0:
-                return jsonify({'success': False, 'error': 'User not found'}), 404
-
-            return jsonify({
-                'success': True,
-                'message': 'User deleted successfully'
-            })
-
+            }}
+        )
+        
+        return jsonify({'success': True, 'message': 'Password updated successfully'})
+        
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
