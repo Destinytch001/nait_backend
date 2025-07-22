@@ -43,24 +43,6 @@ CORS(app,
      expose_headers="*",
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 
-@app.after_request
-def add_cors_and_security_headers(response):
-    origin = request.headers.get('Origin')
-    if origin:
-        response.headers.add("Access-Control-Allow-Origin", origin)
-        response.headers.add("Access-Control-Allow-Credentials", "true")
-        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        response.headers.add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-
-    # Security headers
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
-    response.headers['X-XSS-Protection'] = '1; mode=block'
-    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
-    response.headers['Content-Security-Policy'] = "default-src 'self'"
-
-    return response
-
 
 # JWT Config
 JWT_SECRET = os.environ.get('JWT_SECRET')
